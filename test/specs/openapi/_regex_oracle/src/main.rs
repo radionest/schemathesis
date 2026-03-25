@@ -53,7 +53,13 @@ fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
 
-    let patterns: Vec<String> = serde_json::from_str(&input).unwrap();
+    let patterns: Vec<String> = match serde_json::from_str(&input) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("JSON parse error: {e}");
+            std::process::exit(1);
+        }
+    };
     let mut results: Vec<serde_json::Value> = Vec::new();
 
     for pattern in &patterns {
