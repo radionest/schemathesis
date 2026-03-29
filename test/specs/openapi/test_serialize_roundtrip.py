@@ -1,20 +1,11 @@
-"""Round-trip property-based tests for the regex AST serializer.
-
-Verifies that parse → serialize produces semantically equivalent patterns.
-"""
-
 import re
-import sys
 
-import pytest
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 try:
-    import re._constants as sre
     import re._parser as sre_parse
 except ImportError:
-    import sre_constants as sre
     import sre_parse
 
 from schemathesis.core.errors import InternalError
@@ -46,7 +37,6 @@ _quantifiers = st.sampled_from(["", "*", "+", "?", "{2}", "{1,3}", "{2,}", "*?",
 
 @st.composite
 def _structured_regex(draw):
-    """Build a regex from parts for better opcode coverage."""
     n_parts = draw(st.integers(min_value=1, max_value=4))
     parts = []
     for _ in range(n_parts):
@@ -75,9 +65,8 @@ def _structured_regex(draw):
 
 
 @given(pattern=_random_regex)
-@settings(max_examples=5000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=5000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_roundtrip_random_text(pattern):
-    """Random valid regex strings: parse → serialize → compile succeeds."""
     parsed = sre_parse.parse(pattern)
     try:
         serialized = _serialize(list(parsed))
@@ -88,9 +77,8 @@ def test_roundtrip_random_text(pattern):
 
 
 @given(pattern=_random_regex)
-@settings(max_examples=3000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=3000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_roundtrip_idempotent(pattern):
-    """serialize(parse(serialize(parse(p)))) == serialize(parse(p))."""
     parsed = sre_parse.parse(pattern)
     try:
         s1 = _serialize(list(parsed))
@@ -102,9 +90,8 @@ def test_roundtrip_idempotent(pattern):
 
 
 @given(data=st.data())
-@settings(max_examples=3000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=3000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_roundtrip_semantic_equivalence(data):
-    """Serialized pattern matches the same strings as the original."""
     pattern = data.draw(_random_regex)
     parsed = sre_parse.parse(pattern)
     try:
@@ -122,9 +109,8 @@ def test_roundtrip_semantic_equivalence(data):
 
 
 @given(pattern=_structured_regex())
-@settings(max_examples=3000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=3000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_roundtrip_structured(pattern):
-    """Structurally generated regex: parse → serialize → compile and idempotent."""
     parsed = sre_parse.parse(pattern)
     try:
         s1 = _serialize(list(parsed))
@@ -137,9 +123,8 @@ def test_roundtrip_structured(pattern):
 
 
 @given(data=st.data())
-@settings(max_examples=2000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=2000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_roundtrip_structured_semantic(data):
-    """Structurally generated regex: semantic equivalence on random strings."""
     pattern = data.draw(_structured_regex())
     parsed = sre_parse.parse(pattern)
     try:

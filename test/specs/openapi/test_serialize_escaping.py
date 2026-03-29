@@ -1,27 +1,14 @@
-"""Escaping edge-case tests for the regex AST serializer.
-
-Focuses on _serialize_literal and _serialize_literal_in_class — the most
-fragile parts of the serializer where wrong escaping silently changes semantics.
-"""
-
 import re
 import string
 
 import pytest
 
 try:
-    import re._constants as sre
     import re._parser as sre_parse
 except ImportError:
-    import sre_constants as sre
     import sre_parse
 
 from schemathesis.specs.openapi.patterns import _serialize
-
-
-# ---------------------------------------------------------------------------
-# Literal escaping (outside character classes)
-# ---------------------------------------------------------------------------
 
 # Every regex metacharacter: must be escaped to match literally
 _REGEX_METACHARACTERS = list(r"\.^$*+?{[|()")
@@ -29,7 +16,6 @@ _REGEX_METACHARACTERS = list(r"\.^$*+?{[|()")
 
 @pytest.mark.parametrize("char", _REGEX_METACHARACTERS)
 def test_literal_metachar_escaped(char):
-    """Regex metacharacters in LITERAL nodes must be escaped so they match literally."""
     pattern = re.escape(char)
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
@@ -40,7 +26,6 @@ def test_literal_metachar_escaped(char):
 
 @pytest.mark.parametrize("char", list(string.printable))
 def test_literal_printable_roundtrip(char):
-    """Every printable ASCII character round-trips through the serializer."""
     pattern = re.escape(char)
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
@@ -68,7 +53,6 @@ _CONTROL_CHARS = [
 
 @pytest.mark.parametrize("char,name", _CONTROL_CHARS)
 def test_literal_control_char(char, name):
-    """Control and non-printable characters must serialize to valid escape sequences."""
     pattern = re.escape(char)
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
@@ -90,7 +74,6 @@ _UNICODE_CHARS = [
 
 @pytest.mark.parametrize("char,name", _UNICODE_CHARS)
 def test_literal_unicode_char(char, name):
-    """Unicode characters must round-trip through the serializer."""
     pattern = re.escape(char)
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
@@ -99,10 +82,6 @@ def test_literal_unicode_char(char, name):
         f"Unicode char {name} ({char!r}): serialized={serialized!r} does not match"
     )
 
-
-# ---------------------------------------------------------------------------
-# Character class escaping (inside [...])
-# ---------------------------------------------------------------------------
 
 # Characters that are special inside character classes
 _CLASS_SPECIAL_CHARS = [
@@ -116,7 +95,6 @@ _CLASS_SPECIAL_CHARS = [
 
 @pytest.mark.parametrize("char,name", _CLASS_SPECIAL_CHARS)
 def test_class_special_char(char, name):
-    """Characters special inside [...] must be properly escaped."""
     # Build a character class containing just this char
     pattern = f"[{re.escape(char)}]"
     try:
@@ -132,7 +110,6 @@ def test_class_special_char(char, name):
 
 @pytest.mark.parametrize("char", _REGEX_METACHARACTERS)
 def test_class_metachar_inside_class(char):
-    """Regex metacharacters inside character classes — some don't need escaping."""
     pattern = f"[{re.escape(char)}]"
     try:
         parsed = sre_parse.parse(pattern)
@@ -145,10 +122,6 @@ def test_class_metachar_inside_class(char):
     )
 
 
-# ---------------------------------------------------------------------------
-# Negated character classes
-# ---------------------------------------------------------------------------
-
 @pytest.mark.parametrize(
     ("pattern", "should_match", "should_not_match"),
     [
@@ -159,17 +132,12 @@ def test_class_metachar_inside_class(char):
     ],
 )
 def test_negated_class(pattern, should_match, should_not_match):
-    """Negated character classes must preserve negation through serialization."""
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
     compiled = re.compile(serialized)
     assert compiled.fullmatch(should_match), f"{serialized!r} should match {should_match!r}"
     assert not compiled.fullmatch(should_not_match), f"{serialized!r} should not match {should_not_match!r}"
 
-
-# ---------------------------------------------------------------------------
-# Ranges inside character classes
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
     ("pattern", "samples_in", "samples_out"),
@@ -182,7 +150,6 @@ def test_negated_class(pattern, should_match, should_not_match):
     ],
 )
 def test_range_in_class(pattern, samples_in, samples_out):
-    """Character ranges must be preserved through serialization."""
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
     compiled = re.compile(serialized)
@@ -191,10 +158,6 @@ def test_range_in_class(pattern, samples_in, samples_out):
     for ch in samples_out:
         assert not compiled.fullmatch(ch), f"{serialized!r} should not match {ch!r}"
 
-
-# ---------------------------------------------------------------------------
-# NOT_LITERAL serialization
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
     ("pattern", "should_match", "should_not_match"),
@@ -205,17 +168,12 @@ def test_range_in_class(pattern, samples_in, samples_out):
     ],
 )
 def test_not_literal(pattern, should_match, should_not_match):
-    """NOT_LITERAL opcode (single char negation) must round-trip correctly."""
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
     compiled = re.compile(serialized)
     assert compiled.fullmatch(should_match)
     assert not compiled.fullmatch(should_not_match)
 
-
-# ---------------------------------------------------------------------------
-# Combined patterns with tricky escaping
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
     ("pattern", "should_match"),
@@ -231,7 +189,6 @@ def test_not_literal(pattern, should_match, should_not_match):
     ],
 )
 def test_escaped_in_context(pattern, should_match):
-    """Escaped metacharacters in concatenated patterns."""
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
     compiled = re.compile(serialized)

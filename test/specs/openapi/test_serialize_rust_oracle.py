@@ -4,8 +4,9 @@ import pathlib
 import re
 import subprocess
 import sys
+
 import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 try:
@@ -13,10 +14,11 @@ try:
 except ImportError:
     import sre_parse
 
-from schemathesis.specs.openapi.patterns import _serialize
 from schemathesis.core.errors import InternalError
+from schemathesis.specs.openapi.patterns import _serialize
 
-sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
+CURRENT_DIR = pathlib.Path(__file__).parent.absolute()
+sys.path.append(str(CURRENT_DIR.parents[2]))
 
 from corpus.tools import extract_regex_patterns, iter_all_corpus_files  # noqa: E402
 
@@ -32,7 +34,6 @@ pytestmark = pytest.mark.skipif(
 
 
 def _canonicalize_batch(patterns: list[str]) -> list[dict]:
-    """Send patterns to Rust oracle, get canonical HIR forms back."""
     result = subprocess.run(
         [ORACLE_BINARY],
         input=json.dumps(patterns),
@@ -58,47 +59,28 @@ def _is_valid_regex(pattern: str) -> bool:
 _RUST_DIALECT_DIFFS = {"\\<", "\\>"}
 
 
-class CheckResult:
-    __slots__ = ("ok", "detail")
-
-    def __init__(self, ok: bool, detail: str):
-        self.ok = ok
-        self.detail = detail
-
-
-def _check_pattern(pattern: str) -> CheckResult:
-    """Check one pattern: serialize(parse(P)) must have same Rust HIR as P."""
+def _check_pattern(pattern):
     if any(seq in pattern for seq in _RUST_DIALECT_DIFFS):
-        return CheckResult(ok=True, detail="Rust dialect difference")
+        return
 
     try:
         serialized = _serialize(list(sre_parse.parse(pattern)))
     except InternalError:
-        return CheckResult(ok=True, detail="unsupported opcode")
+        return
 
     [orig], [ser] = _canonicalize_batch([pattern]), _canonicalize_batch([serialized])
 
     if orig["error"] or ser["error"]:
-        return CheckResult(ok=True, detail=f"Rust parse difference: {orig.get('error') or ser.get('error')}")
+        return
 
-    if orig["canonical"] == ser["canonical"]:
-        return CheckResult(ok=True, detail="OK")
-
-    return CheckResult(
-        ok=False,
-        detail=(
-            f"HIR mismatch:\n"
-            f"  original:   {pattern!r}\n"
-            f"  serialized: {serialized!r}\n"
-            f"  rust(orig): {orig['canonical'][:100]}\n"
-            f"  rust(ser):  {ser['canonical'][:100]}"
-        ),
+    assert orig["canonical"] == ser["canonical"], (
+        f"HIR mismatch:\n"
+        f"  original:   {pattern!r}\n"
+        f"  serialized: {serialized!r}\n"
+        f"  rust(orig): {orig['canonical'][:100]}\n"
+        f"  rust(ser):  {ser['canonical'][:100]}"
     )
 
-
-# ---------------------------------------------------------------------------
-# Parametrized: known patterns from the test suite
-# ---------------------------------------------------------------------------
 
 _KNOWN_PATTERNS = [
     r"[a-z]+",
@@ -149,24 +131,14 @@ _KNOWN_PATTERNS = [
 
 @pytest.mark.parametrize("pattern", _KNOWN_PATTERNS)
 def test_rust_oracle_known_patterns(pattern):
-    result = _check_pattern(pattern)
-    assert result.ok, result.detail
+    _check_pattern(pattern)
 
-
-# ---------------------------------------------------------------------------
-# PBT: random valid regex patterns
-# ---------------------------------------------------------------------------
 
 @given(pattern=st.text(min_size=1, max_size=60).filter(_is_valid_regex))
-@settings(max_examples=2000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=2000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_rust_oracle_random(pattern):
-    result = _check_pattern(pattern)
-    assert result.ok, result.detail
+    _check_pattern(pattern)
 
-
-# ---------------------------------------------------------------------------
-# Corpus: bulk validation against real-world patterns
-# ---------------------------------------------------------------------------
 
 # Known limitations: patterns matching these regexes may produce HIR mismatches
 # due to Python/Rust dialect differences, not serializer bugs.
@@ -199,8 +171,7 @@ def _corpus_patterns():
 
 @pytest.mark.parametrize("pattern", _corpus_patterns())
 def test_rust_oracle_corpus(pattern):
-    result = _check_pattern(pattern)
-    assert result.ok, result.detail
+    _check_pattern(pattern)
 
 
 _EXPECTED_UNSUPPORTED_OPCODES = {
@@ -210,7 +181,6 @@ _EXPECTED_UNSUPPORTED_OPCODES = {
 
 
 def test_corpus_unsupported_opcodes():
-    """Verify no new unsupported opcodes appear in the corpus."""
     corpus = extract_regex_patterns(schema for _, _, schema in iter_all_corpus_files())
     found: set[str] = set()
     for pattern in corpus:

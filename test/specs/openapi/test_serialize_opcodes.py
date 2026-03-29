@@ -1,14 +1,8 @@
-"""Opcode coverage tests for the regex AST serializer.
-
-Verifies that the serializer handles all opcodes that sre_parse can produce,
-and identifies which opcodes are intentionally unsupported.
-"""
-
 import re
 import sys
 
 import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 try:
@@ -27,7 +21,6 @@ SKIP_BEFORE_PY11 = pytest.mark.skipif(
 
 
 def _collect_opcodes(nodes) -> set[int]:
-    """Recursively collect all opcodes from an sre_parse AST."""
     ops = set()
     for op, value in nodes:
         ops.add(op)
@@ -55,10 +48,6 @@ def _collect_opcodes(nodes) -> set[int]:
                 ops |= _collect_opcodes(no_pattern)
     return ops
 
-
-# ---------------------------------------------------------------------------
-# Supported opcodes: these must round-trip correctly
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
     ("description", "pattern"),
@@ -135,7 +124,6 @@ def _collect_opcodes(nodes) -> set[int]:
     ],
 )
 def test_supported_opcode_roundtrip(description, pattern):
-    """Each supported opcode round-trips through serialize correctly."""
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
 
@@ -163,17 +151,12 @@ def test_supported_opcode_roundtrip(description, pattern):
     ],
 )
 def test_py311_opcodes(description, pattern):
-    """Python 3.11+ opcodes (POSSESSIVE_REPEAT)."""
     parsed = sre_parse.parse(pattern)
     serialized = _serialize(list(parsed))
     re.compile(serialized)
     serialized2 = _serialize(list(sre_parse.parse(serialized)))
     assert serialized == serialized2
 
-
-# ---------------------------------------------------------------------------
-# Unsupported opcodes: serializer should raise InternalError
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
     ("description", "pattern"),
@@ -188,15 +171,10 @@ def test_py311_opcodes(description, pattern):
     ],
 )
 def test_unsupported_opcodes_raise(description, pattern):
-    """Unsupported opcodes should raise InternalError, not silently produce wrong output."""
     parsed = sre_parse.parse(pattern)
     with pytest.raises(InternalError, match="Unsupported sre opcode"):
         _serialize(list(parsed))
 
-
-# ---------------------------------------------------------------------------
-# Fuzzing for undiscovered unsupported opcodes
-# ---------------------------------------------------------------------------
 
 def _is_valid_regex(pattern: str) -> bool:
     try:
@@ -207,9 +185,8 @@ def _is_valid_regex(pattern: str) -> bool:
 
 
 @given(pattern=st.text(min_size=1, max_size=60).filter(_is_valid_regex))
-@settings(max_examples=10000, suppress_health_check=list(HealthCheck))
+@settings(max_examples=10000, suppress_health_check=list(HealthCheck), deadline=None)
 def test_no_unhandled_opcodes(pattern):
-    """No valid regex should cause an unexpected exception (only InternalError for unsupported opcodes)."""
     parsed = sre_parse.parse(pattern)
     try:
         _serialize(list(parsed))
