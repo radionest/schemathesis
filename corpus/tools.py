@@ -5,7 +5,7 @@ import os
 import pathlib
 import re
 import tarfile
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from typing import Any
 
 import yaml
@@ -152,8 +152,31 @@ def iter_all_corpus_files() -> Generator[tuple[str, str, dict[str, Any]], None, 
     """Iterate over all corpus files."""
     for corpus_name in os.listdir(DATA_DIR):
         if corpus_name.endswith(".tar.gz"):
-            for file_name, schema in iter_corpus_file(corpus_name):
-                yield corpus_name, file_name, schema
+            name = corpus_name.removesuffix(".tar.gz")
+            for file_name, schema in iter_corpus_file(name):
+                yield name, file_name, schema
+
+
+def _collect_patterns(obj: Any) -> set[str]:
+    match obj:
+        case {"pattern": str() as p}:
+            result, children = {p}, obj.values()
+        case dict():
+            result, children = set(), obj.values()
+        case list():
+            result, children = set(), obj
+        case _:
+            return set()
+    for child in children:
+        result |= _collect_patterns(child)
+    return result
+
+
+def extract_regex_patterns(schemas: Iterable[dict[str, Any]]) -> list[str]:
+    patterns: set[str] = set()
+    for schema in schemas:
+        patterns |= _collect_patterns(schema)
+    return sorted(patterns)
 
 
 if __name__ == "__main__":
